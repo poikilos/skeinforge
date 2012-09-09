@@ -124,7 +124,8 @@ class SkinRepository:
 		settings.LabelDisplay().getFromName('- Division -', self)
 		self.horizontalInfillDivisions = settings.IntSpin().getSingleIncrementFromValue(1, 'Horizontal Infill Divisions (integer):', self, 3, 2)
 		self.horizontalPerimeterDivisions = settings.IntSpin().getSingleIncrementFromValue(1, 'Horizontal Perimeter Divisions (integer):', self, 3, 1)
-		self.verticalDivisions = settings.IntSpin().getSingleIncrementFromValue(1, 'Vertical Divisions (integer):', self, 3, 2)
+		self.verticalInfillDivisions = settings.IntSpin().getSingleIncrementFromValue(1, 'Vertical Infill Divisions (integer):', self, 3, 2)
+		self.verticalPerimeterDivisions = settings.IntSpin().getSingleIncrementFromValue(1, 'Vertical Perimeter Divisions (integer):', self, 3, 2)
 		settings.LabelSeparator().getFromRepository(self)
 		self.hopWhenExtrudingInfill = settings.BooleanSetting().getFromValue('Hop When Extruding Infill', self, False)
 		self.layersFrom = settings.IntSpin().getSingleIncrementFromValue(0, 'Layers From (index):', self, 912345678, 1)
@@ -154,11 +155,13 @@ class SkinSkein:
 		self.maximumZFeedRateMinute = 60.0
 		self.oldFlowRate = None
 		self.oldLocation = None
+		self.sharpestProduct = 0.94
 		self.travelFeedRateMinute = 957.0
 
 	def addFlowRateLine(self, flowRate):
 		'Add a flow rate line.'
-		self.distanceFeedRate.addLine('M108 S' + euclidean.getFourSignificantFigures(flowRate))
+		if flowRate != None:
+			self.distanceFeedRate.addLine('M108 S' + euclidean.getFourSignificantFigures(flowRate))
 
 	def addPerimeterLoop(self, thread, z):
 		'Add the edge loop to the gcode.'
@@ -168,11 +171,12 @@ class SkinSkein:
 		'Add skinned infill.'
 		if self.infillBoundaries == None:
 			return
-		bottomZ = self.oldLocation.z + self.layerHeight / self.verticalDivisionsFloat - self.layerHeight
+		bottomZ = self.oldLocation.z + self.layerHeight / self.verticalInfillDivisionsFloat - self.layerHeight
 		offsetY = 0.5 * self.skinInfillWidth
-		self.addFlowRateLine(self.oldFlowRate / self.verticalDivisionsFloat / self.horizontalInfillDivisionsFloat)
-		for verticalDivisionIndex in xrange(self.verticalDivisions):
-			z = bottomZ + self.layerHeight / self.verticalDivisionsFloat * float(verticalDivisionIndex)
+		if self.oldFlowRate != None:
+			self.addFlowRateLine(self.oldFlowRate / self.verticalInfillDivisionsFloat / self.horizontalInfillDivisionsFloat)
+		for verticalDivisionIndex in xrange(self.verticalInfillDivisions):
+			z = bottomZ + self.layerHeight / self.verticalInfillDivisionsFloat * float(verticalDivisionIndex)
 			self.addSkinnedInfillBoundary(self.infillBoundaries, offsetY * (verticalDivisionIndex % 2 == 0), self.oldLocation.z, z)
 		self.addFlowRateLine(self.oldFlowRate)
 		self.infillBoundaries = None
@@ -199,7 +203,7 @@ class SkinSkein:
 				for endpoint in segment:
 					endpoint.point = complex(endpoint.point.real, endpoint.point.imag + offsetY)
 					endpoints.append(endpoint)
-		infillPaths = euclidean.getPathsFromEndpoints(endpoints, 5.0 * self.skinInfillWidth, pixelTable, aroundWidth)
+		infillPaths = euclidean.getPathsFromEndpoints(endpoints, 5.0 * self.skinInfillWidth, pixelTable, self.sharpestProduct, aroundWidth)
 		for infillPath in infillPaths:
 			addPointBeforeThread = True
 			infillRotated = euclidean.getRotatedComplexes(self.rotation, infillPath)
@@ -217,10 +221,10 @@ class SkinSkein:
 				self.distanceFeedRate.addGcodeMovementZWithFeedRate(self.maximumZFeedRateMinute, infillRotatedFirst, z)
 				addPointBeforeThread = False
 			if addPointBeforeThread:
-				self.distanceFeedRate.addGcodeMovementZ(infillRotated[0], z)
+				self.distanceFeedRate.addGcodeMovementZWithFeedRate(self.feedRateMinute, infillRotated[0], z)
 			self.distanceFeedRate.addLine('M101')
 			for point in infillRotated[1 :]:
-				self.distanceFeedRate.addGcodeMovementZ(point, z)
+				self.distanceFeedRate.addGcodeMovementZWithFeedRate(self.feedRateMinute, point, z)
 			self.distanceFeedRate.addLine('M103')
 			lastPointRotated = infillRotated[-1]
 			self.oldLocation = Vector3(lastPointRotated.real, lastPointRotated.imag, upperZ)
@@ -231,7 +235,7 @@ class SkinSkein:
 		'Add skinned edge.'
 		if self.edge == None:
 			return
-		bottomZ = self.oldLocation.z + self.layerHeight / self.verticalDivisionsFloat - self.layerHeight
+		bottomZ = self.oldLocation.z + self.layerHeight / self.verticalPerimeterDivisionsFloat - self.layerHeight
 		edgeThread = self.edge[: -1]
 		edges = []
 		radiusAddition = self.edgeWidth / self.horizontalPerimeterDivisionsFloat
@@ -239,17 +243,20 @@ class SkinSkein:
 		for division in xrange(self.repository.horizontalPerimeterDivisions.value):
 			edges.append(self.getClippedSimplifiedLoopPathByLoop(intercircle.getLargestInsetLoopFromLoop(edgeThread, radius)))
 			radius += radiusAddition
-		skinnedPerimeterFlowRate = self.oldFlowRate / self.verticalDivisionsFloat
+		skinnedPerimeterFlowRate = None
+		if self.oldFlowRate != None:
+			skinnedPerimeterFlowRate = self.oldFlowRate / self.verticalPerimeterDivisionsFloat
 		if getIsMinimumSides(edges):
-			self.addFlowRateLine(skinnedPerimeterFlowRate / self.horizontalPerimeterDivisionsFloat)
-			for verticalDivisionIndex in xrange(self.verticalDivisions):
-				z = bottomZ + self.layerHeight / self.verticalDivisionsFloat * float(verticalDivisionIndex)
+			if self.oldFlowRate != None:
+				self.addFlowRateLine(skinnedPerimeterFlowRate / self.horizontalPerimeterDivisionsFloat)
+			for verticalDivisionIndex in xrange(self.verticalPerimeterDivisions):
+				z = bottomZ + self.layerHeight / self.verticalPerimeterDivisionsFloat * float(verticalDivisionIndex)
 				for edge in edges:
 					self.addPerimeterLoop(edge, z)
 		else:
 			self.addFlowRateLine(skinnedPerimeterFlowRate)
-			for verticalDivisionIndex in xrange(self.verticalDivisions):
-				z = bottomZ + self.layerHeight / self.verticalDivisionsFloat * float(verticalDivisionIndex)
+			for verticalDivisionIndex in xrange(self.verticalPerimeterDivisions):
+				z = bottomZ + self.layerHeight / self.verticalPerimeterDivisionsFloat * float(verticalDivisionIndex)
 				self.addPerimeterLoop(self.edge, z)
 		self.addFlowRateLine(self.oldFlowRate)
 		self.edge = None
@@ -268,8 +275,10 @@ class SkinSkein:
 		self.layersFromBottom = repository.layersFrom.value
 		self.horizontalInfillDivisionsFloat = float(repository.horizontalInfillDivisions.value)
 		self.horizontalPerimeterDivisionsFloat = float(repository.horizontalPerimeterDivisions.value)
-		self.verticalDivisions = max(repository.verticalDivisions.value, 1)
-		self.verticalDivisionsFloat = float(self.verticalDivisions)
+		self.verticalInfillDivisions = max(repository.verticalInfillDivisions.value, 1)
+		self.verticalPerimeterDivisions = max(repository.verticalPerimeterDivisions.value, 1)
+		self.verticalInfillDivisionsFloat = float(self.verticalInfillDivisions)
+		self.verticalPerimeterDivisionsFloat = float(self.verticalPerimeterDivisions)
 		self.parseInitialization()
 		self.clipLength = 0.5 * self.clipOverEdgeWidth * self.edgeWidth
 		self.skinInfillInset = 0.5 * (self.infillWidth + self.skinInfillWidth) * (1.0 - self.infillPerimeterOverlap)
@@ -314,6 +323,9 @@ class SkinSkein:
 			self.distanceFeedRate.parseSplitLine(firstWord, splitLine)
 			if firstWord == '(<clipOverEdgeWidth>':
 				self.clipOverEdgeWidth = float(splitLine[1])
+			elif firstWord == '(<edgeWidth>':
+				self.edgeWidth = float(splitLine[1])
+				self.halfEdgeWidth = 0.5 * self.edgeWidth
 			elif firstWord == '(</extruderInitialization>)':
 				self.distanceFeedRate.addTagBracketedProcedure('skin')
 				return
@@ -328,9 +340,8 @@ class SkinSkein:
 				self.maximumZFeedRateMinute = 60.0 * float(splitLine[1])
 			elif firstWord == '(<operatingFlowRate>':
 				self.oldFlowRate = float(splitLine[1])
-			elif firstWord == '(<edgeWidth>':
-				self.edgeWidth = float(splitLine[1])
-				self.halfEdgeWidth = 0.5 * self.edgeWidth
+			elif firstWord == '(<sharpestProduct>':
+				self.sharpestProduct = float(splitLine[1])
 			elif firstWord == '(<travelFeedRatePerSecond>':
 				self.travelFeedRateMinute = 60.0 * float(splitLine[1])
 			self.distanceFeedRate.addLine(line)
