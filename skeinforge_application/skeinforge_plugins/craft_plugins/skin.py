@@ -24,10 +24,15 @@ Default: 1
 
 Defines the number of times the skinned edges are divided horizontally.
 
-====Vertical Divisions====
+====Vertical Infill Divisions====
 Default: 2
 
-Defines the number of times the skinned infill and edges are divided vertically.
+Defines the number of times the skinned infill is divided vertically.
+
+====Vertical Perimeter Divisions====
+Default: 2
+
+Defines the number of times the skinned edges are divided vertically.
 
 ===Hop When Extruding Infill===
 Default is off.

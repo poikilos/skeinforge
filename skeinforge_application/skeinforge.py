@@ -230,6 +230,7 @@ import os
 import sys
 
 
+# move settings from alteration to distanceFeedRate
 # consolidate side loops for voronoi and sponge_slice, add boundary
 # check for last existing then remove unneeded fill code (getLastExistingFillLoops) from euclidean, add fill in penultimate loops, if there is no fill it should not use edge - skin should work
 # replace replace baseLayerThickness.. with baseLayerHeightMultiplier
