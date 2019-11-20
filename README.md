@@ -1,5 +1,6 @@
 # Skeinforge
 [Poikilos Fork](https://github.com/poikilos/skeinforge)
+## Outdated: See <https://github.com/poikilos/Skeinforge50plus> instead!
 
 ## Reasons for fork:
 - Preserve this great program, which adds to the public-licensed 3D
